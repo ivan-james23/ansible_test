@@ -1,0 +1,70 @@
+---
+
+- hosts: all
+  become: true
+  tasks:
+  - name: update repository index
+    yum:
+      name: '*'
+      state: latest
+
+  - name: install apache2 package
+    yum:
+      name: httpd
+      state: present
+
+  - name: add php support for apache
+    yum:
+      name:
+        - php
+        - php-mysqlnd
+        - php-fpm
+      state: present
+
+  - name: Start and enable Apache servise
+    systemd:
+       name: httpd
+       state: started
+       enabled: yes
+
+  - name: Create a PHP info file for testing
+    copy:
+      dest: /var/www/html/info.php
+      content: "<?php phpinfo(); ?>"
+
+  - name: Open port 80 in the firewall
+    firewalld:
+      service: http
+      permanent: yes
+      state: enabled
+    notify: reload_firewalld
+
+  - name: Open port 443 in the firewall
+    firewalld:
+      service: https
+      permanent: yes
+      state: enabled
+    notify: reload_firewalld
+
+  - name: Check Apache configuration syntax
+    command: httpd -t
+    register: apache_config_test
+    failed_when: apache_config_test.rc != 0
+    ignore_errors: yes
+
+  - name: Check SELinux status
+    command: getenforce
+    register: selinux_status
+
+  - name: Set SELinux to permissive mode if enforcing
+    command: setenforce 0
+    when: selinux_status.stdout == "Enforcing"
+
+  handlers:
+  - name: reload_firewalld
+    command: firewall-cmd --reload
+
+  - name: restart_httpd
+    systemd:
+      name: httpd
+      state: restarted
